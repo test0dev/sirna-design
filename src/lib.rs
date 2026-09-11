@@ -2,6 +2,7 @@
 //!
 //! Modules land incrementally: `rules` → `tm` → `design` → `ensembl` → `offtarget` → `api`.
 
+pub mod api;
 pub mod design;
 pub mod ensembl;
 pub mod error;
@@ -9,6 +10,10 @@ pub mod offtarget;
 pub mod rules;
 pub mod tm;
 
+pub use api::{
+    ensembl_base_url, listen_addr, router, ApiHealth, ApiVersion, AppState, DesignRequest,
+    DEFAULT_LISTEN_ADDR, ENSEMBL_URL_ENV, LISTEN_ADDR_ENV,
+};
 pub use design::{
     default_input, design_from_resolved, design_sirnas, normalize_dna, parse_range, passes_combine,
     skip_offtarget, AlgorithmFlags, Cds, DesignInput, DesignMeta, DesignResult, RuleHits,

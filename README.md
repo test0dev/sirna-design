@@ -23,6 +23,32 @@ cargo test
 cargo run -- --listen 127.0.0.1:8080
 ```
 
+Environment:
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `LISTEN_ADDR` | `0.0.0.0:8080` | Bind address (`--listen` overrides) |
+| `OFFTARGET_URL` | `https://offtarget.0bot.dev` | Remote offtarget origin |
+| `ENSEMBL_URL` | `https://rest.ensembl.org` | Ensembl REST origin |
+
+## HTTP API
+
+| Method | Path | Body | Response |
+|---|---|---|---|
+| `GET` | `/health` | — | `{ "status": "ok" }` |
+| `GET` | `/v1/version` | — | `{ "name", "version" }` (crate) |
+| `POST` | `/v1/design` | see below | `DesignResult` (same serde shape as `pcsk9.design.*.json`) |
+| `POST` | `/v1/offtarget/check` | remote offtarget request | `{ "results": [...] }` |
+
+`POST /v1/design` accepts either:
+
+- `{ "symbol": "PCSK9", ...DesignInput overrides }` — resolve via Ensembl, then design
+- `{ "sequence": "...", "accession": "...", "geneSymbol": "...", "cds": { "start", "end" }, ...overrides }` — design without Ensembl
+
+DesignInput overrides use the existing camelCase field names (`specificity`, `hideLessSpecific`, `targetRangeFrom`, …).
+
+`POST /v1/offtarget/check` is a proxy around the remote client (`OFFTARGET_URL`), same snake_case body as `https://offtarget.0bot.dev/v1/offtarget/check`.
+
 ## Migration order
 
 1. `rules` + unit tests vs `testdata/pcsk9/pcsk9.atomic.json`

@@ -1,8 +1,5 @@
 import { NextResponse } from "next/server";
-import {
-  fetchSidirectFasta,
-  normalizeAccession,
-} from "@/lib/sidirect-retrieve";
+import { fetchNcbiFasta, normalizeAccession } from "@/lib/ncbi-retrieve";
 
 export async function GET(request: Request) {
   const accession = normalizeAccession(
@@ -16,7 +13,7 @@ export async function GET(request: Request) {
   }
 
   try {
-    return NextResponse.json(await fetchSidirectFasta(accession));
+    return NextResponse.json(await fetchNcbiFasta(accession));
   } catch (error) {
     const message =
       error instanceof Error ? error.message : "Failed to retrieve FASTA.";

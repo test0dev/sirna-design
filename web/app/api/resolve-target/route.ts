@@ -1,10 +1,11 @@
 import { NextResponse } from "next/server";
+import { formatFasta } from "@/lib/design-input";
 import {
   EnsemblNotFoundError,
+  fetchEnsemblSequence,
   normalizeGeneSymbol,
   resolveManeSelect,
 } from "@/lib/ensembl-target";
-import { fetchSidirectFasta } from "@/lib/sidirect-retrieve";
 
 export async function GET(request: Request) {
   const url = new URL(request.url);
@@ -25,9 +26,10 @@ export async function GET(request: Request) {
     });
 
     const refseq = resolved.mane_select_transcript.refseq;
-    if (!refseq) {
+    const ensemblId = resolved.mane_select_transcript.ensembl_transcript_stable;
+    if (!refseq && !ensemblId) {
       return NextResponse.json(
-        { error: `No RefSeq mRNA accession found for ${symbol}.` },
+        { error: `No transcript accession found for ${symbol}.` },
         { status: 502 },
       );
     }
@@ -36,13 +38,15 @@ export async function GET(request: Request) {
       return NextResponse.json(resolved);
     }
 
-    const fasta = await fetchSidirectFasta(refseq);
+    const cdna = await fetchEnsemblSequence(ensemblId, "cdna");
+    const accession = refseq ?? ensemblId;
+    const header = `${accession} ${resolved.gene.gene_description} (${resolved.gene.symbol}), mRNA`;
     return NextResponse.json({
       ...resolved,
-      accession: fasta.accession,
-      header: fasta.header,
-      sequence: fasta.sequence,
-      length: fasta.length,
+      accession,
+      header,
+      sequence: formatFasta(header, cdna),
+      length: cdna.length,
     });
   } catch (error) {
     if (error instanceof EnsemblNotFoundError) {
@@ -50,9 +54,7 @@ export async function GET(request: Request) {
     }
     const message =
       error instanceof Error ? error.message : "Failed to resolve target gene.";
-    const notFound =
-      message.startsWith("Gene not found") ||
-      message.startsWith("Accession not found");
+    const notFound = message.startsWith("Gene not found");
     return NextResponse.json(
       { error: message },
       { status: notFound ? 404 : 502 },

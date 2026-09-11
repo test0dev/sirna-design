@@ -1,5 +1,6 @@
-import resultJson from "@/mock/ifnb1.json";
+import resultJson from "@/mock/design-result.json";
 import type { SirnaResult } from "@/lib/sirna-types";
+import { asSirnaResult } from "@/lib/sirna-types";
 
 function validateResult(value: SirnaResult): SirnaResult {
   const { transcript, cds, design, sirnas } = value;
@@ -28,4 +29,6 @@ function validateResult(value: SirnaResult): SirnaResult {
   return value;
 }
 
-export const resultData = validateResult(resultJson as SirnaResult);
+export const resultData = validateResult(
+  asSirnaResult(resultJson as unknown),
+);

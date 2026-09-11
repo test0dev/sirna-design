@@ -23,6 +23,22 @@ cargo test
 cargo run -- --listen 127.0.0.1:8080
 ```
 
+The product UI is a separate Next.js app in `web/`. Run both processes:
+
+```bash
+# terminal 1 — Rust API
+cargo run -- --listen 127.0.0.1:8080
+
+# terminal 2 — Design + Results UI
+cd web
+npm install
+npm run dev
+```
+
+Open `http://localhost:3000`. The browser posts `DesignInput` JSON to `POST /v1/design` (see `NEXT_PUBLIC_API_BASE`, default `http://127.0.0.1:8080`). Gene-symbol resolve and accession retrieve stay as Next BFF routes (`/api/resolve-target`, `/api/retrieve`) and talk to Ensembl / NCBI only.
+
+See `web/README.md`.
+
 Environment:
 
 | Variable | Default | Purpose |

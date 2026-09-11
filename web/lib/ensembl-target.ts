@@ -279,6 +279,19 @@ export class EnsemblNotFoundError extends Error {
   }
 }
 
+export async function fetchEnsemblSequence(
+  id: string,
+  type: "cdna" | "cds" = "cdna",
+): Promise<string> {
+  const seq = await ensemblGet<EnsemblSequence>(
+    `/sequence/id/${encodeURIComponent(id)}?type=${type}`,
+  );
+  if (!seq.seq) {
+    throw new Error(`No ${type} sequence returned for ${id}.`);
+  }
+  return seq.seq;
+}
+
 export async function resolveManeSelect(
   symbol: string,
   species = "homo_sapiens",
@@ -325,10 +338,7 @@ export async function resolveManeSelect(
 
   let cdsSequence: string | null = null;
   if (options.includeCdsSequence) {
-    const cds = await ensemblGet<EnsemblSequence>(
-      `/sequence/id/${encodeURIComponent(stable)}?type=cds`,
-    );
-    cdsSequence = cds.seq ?? null;
+    cdsSequence = await fetchEnsemblSequence(stable, "cds");
   }
 
   const assembly = gene.assembly_name ?? "GRCh38";

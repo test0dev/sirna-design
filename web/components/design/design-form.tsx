@@ -24,17 +24,19 @@ import {
   SPECIFICITY_OPTIONS,
   defaultDesignInput,
   parseNucleotideSequence,
+  toDesignPayload,
   validateDesignInput,
   type CombineRule,
   type ContiguousLength,
   type DesignInput,
 } from "@/lib/design-input";
+import { apiUrl } from "@/lib/api";
 import {
   combineHintKey,
   localizeThrownMessage,
   specificityOptionLabel,
 } from "@/lib/i18n";
-import type { SirnaResult } from "@/lib/sirna-types";
+import { asSirnaResult } from "@/lib/sirna-types";
 import { cn } from "@/lib/utils";
 
 const CONTIGUOUS_LENGTHS: ContiguousLength[] = [4, 5, 6, 7];
@@ -207,23 +209,28 @@ export function DesignForm() {
     window.sessionStorage.setItem(DESIGN_INPUT_STORAGE_KEY, JSON.stringify(input));
 
     try {
-      const response = await fetch("/api/design", {
+      const response = await fetch(apiUrl("/v1/design"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(input),
+        body: JSON.stringify(toDesignPayload(input)),
       });
-      const payload = (await response.json()) as {
-        result?: SirnaResult;
-        error?: string;
-      };
+      const payload = (await response.json()) as unknown;
 
-      if (!response.ok || !payload.result) {
-        throw new Error(payload.error ?? t("errDesignFailed"));
+      if (!response.ok) {
+        const err =
+          payload &&
+          typeof payload === "object" &&
+          "error" in payload &&
+          typeof (payload as { error: unknown }).error === "string"
+            ? (payload as { error: string }).error
+            : t("errDesignFailed");
+        throw new Error(err);
       }
 
+      const result = asSirnaResult(payload);
       window.sessionStorage.setItem(
         DESIGN_RESULT_STORAGE_KEY,
-        JSON.stringify(payload.result),
+        JSON.stringify(result),
       );
       router.push("/results");
     } catch (submitError) {

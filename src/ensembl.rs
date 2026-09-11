@@ -248,12 +248,15 @@ pub(crate) async fn resolve_with<C: EnsemblGet>(
                 client.get_json(&lookup_id_expand_path(&lookup.id)).await?,
                 "lookup/id",
             )?;
-            let tx = pick_canonical(&gene).map_err(|e| {
-                Error::Msg(format!(
-                    "no canonical_transcript for {sym} and expand fallback failed: {e}"
-                ))
-            })?;
-            (gene, tx.id.clone())
+            let tx_id = pick_canonical(&gene)
+                .map_err(|e| {
+                    Error::Msg(format!(
+                        "no canonical_transcript for {sym} and expand fallback failed: {e}"
+                    ))
+                })?
+                .id
+                .clone();
+            (gene, tx_id)
         }
     };
 

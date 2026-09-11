@@ -20,7 +20,8 @@ fn mock_routes(path: &str, query: Option<&str>) -> Option<(u16, Value)> {
             json!({
                 "id": "ENSG00000169174",
                 "display_name": "PCSK9",
-                "description": "proprotein convertase subtilisin/kexin type 9 [Source:HGNC Symbol;Acc:HGNC:20001]"
+                "description": "proprotein convertase subtilisin/kexin type 9 [Source:HGNC Symbol;Acc:HGNC:20001]",
+                "canonical_transcript": "ENST00000302118.5"
             }),
         )),
         ("/lookup/symbol/homo_sapiens/NOTAGENE", _) => Some((

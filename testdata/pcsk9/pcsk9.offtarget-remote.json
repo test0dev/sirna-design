@@ -1,0 +1,77 @@
+{
+  "base": "https://offtarget.0bot.dev",
+  "request": {
+    "target_gene": "PCSK9",
+    "queries": [
+      {
+        "id": "si-01",
+        "guide": "TCATTGATGACATCTTTGGCA",
+        "sense": "CCAAAGATGTCATCAATGAGG"
+      }
+    ]
+  },
+  "results": [
+    {
+      "id": "si-01",
+      "guide": "TCATTGATGACATCTTTGGCA",
+      "length": 21,
+      "cached": false,
+      "profile": "t6b",
+      "specificity_label": "中",
+      "on_target": {
+        "transcripts": 16,
+        "genes": 1
+      },
+      "offtarget": {
+        "perfect": 0,
+        "mismatch_1": 0,
+        "mismatch_2": 10,
+        "mismatch_3": 59,
+        "seed_transcripts": 56313,
+        "seed_genes": 7537
+      },
+      "hits": [
+        {
+          "accession": "NM_001407240.1",
+          "gene": "PCSK9",
+          "mismatches": 0,
+          "position": 1670,
+          "on_target": true,
+          "site": "TGCCAAAGATGTCATCAATGA"
+        },
+        {
+          "accession": "NM_001407241.1",
+          "gene": "PCSK9",
+          "mismatches": 0,
+          "position": 1547,
+          "on_target": true,
+          "site": "TGCCAAAGATGTCATCAATGA"
+        },
+        {
+          "accession": "NM_001407242.1",
+          "gene": "PCSK9",
+          "mismatches": 0,
+          "position": 1550,
+          "on_target": true,
+          "site": "TGCCAAAGATGTCATCAATGA"
+        },
+        {
+          "accession": "NM_001407243.1",
+          "gene": "PCSK9",
+          "mismatches": 0,
+          "position": 1490,
+          "on_target": true,
+          "site": "TGCCAAAGATGTCATCAATGA"
+        },
+        {
+          "accession": "NM_001407245.1",
+          "gene": "PCSK9",
+          "mismatches": 0,
+          "position": 1355,
+          "on_target": true,
+          "site": "TGCCAAAGATGTCATCAATGA"
+        }
+      ]
+    }
+  ]
+}

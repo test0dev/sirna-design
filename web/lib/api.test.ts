@@ -8,6 +8,10 @@ describe("apiUrl", () => {
   it("joins the default local API origin with a path", () => {
     assert.equal(apiBase(), "http://127.0.0.1:8080");
     assert.equal(apiUrl("/v1/design"), "http://127.0.0.1:8080/v1/design");
+    assert.equal(
+      apiUrl("/v1/resolve?symbol=PCSK9&include_sequence=1"),
+      "http://127.0.0.1:8080/v1/resolve?symbol=PCSK9&include_sequence=1",
+    );
     assert.equal(apiUrl("health"), "http://127.0.0.1:8080/health");
   });
 });

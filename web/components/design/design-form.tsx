@@ -76,19 +76,16 @@ export function DesignForm() {
 
     try {
       const response = await fetch(
-        `/api/resolve-target?symbol=${encodeURIComponent(symbol)}&fetchSequence=1`,
+        apiUrl(
+          `/v1/resolve?symbol=${encodeURIComponent(symbol)}&include_sequence=1`,
+        ),
       );
       const payload = (await response.json()) as {
-        gene?: { symbol?: string };
-        mane_select_transcript?: {
-          ensembl_transcript?: string;
-          refseq?: string | null;
-          mane_select?: boolean;
-          canonical?: boolean;
-        };
+        symbol?: string;
+        name?: string;
         accession?: string;
+        ensemblTranscript?: string;
         sequence?: string;
-        header?: string;
         length?: number;
         error?: string;
       };
@@ -97,30 +94,26 @@ export function DesignForm() {
         throw new Error(payload.error ?? t("errResolveFailed"));
       }
 
-      const refseq =
-        payload.accession ??
-        payload.mane_select_transcript?.refseq ??
-        input.accession;
+      const refseq = payload.accession ?? input.accession;
       setInput((current) => ({
         ...current,
-        geneSymbol: payload.gene?.symbol ?? symbol,
+        geneSymbol: payload.symbol ?? symbol,
         accession: refseq,
         sequence: payload.sequence!,
       }));
       setResolveSummary(
         t("resolveSummary", {
-          symbol: payload.gene?.symbol ?? symbol,
-          transcript:
-            payload.mane_select_transcript?.ensembl_transcript ?? "—",
+          symbol: payload.symbol ?? symbol,
+          transcript: payload.ensemblTranscript ?? "—",
           refseq: refseq || "—",
-          tag: payload.mane_select_transcript?.mane_select
+          tag: (refseq ?? "").toUpperCase().startsWith("NM_")
             ? t("maneSelectTag")
             : t("canonicalTag"),
         }),
       );
       setRetrieveMessage(
         t("loadedTranscript", {
-          header: payload.header ?? refseq,
+          header: payload.accession ?? refseq,
           length: Number(payload.length ?? 0).toLocaleString(),
         }),
       );
@@ -148,7 +141,7 @@ export function DesignForm() {
 
     try {
       const response = await fetch(
-        `/api/retrieve?accession=${encodeURIComponent(accession)}`,
+        apiUrl(`/v1/retrieve?accession=${encodeURIComponent(accession)}`),
       );
       const payload = (await response.json()) as {
         sequence?: string;

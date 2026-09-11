@@ -9,7 +9,12 @@ use crate::design::{
 use crate::ensembl::{EnsemblClient, DEFAULT_SPECIES, ENSEMBL_REST};
 use crate::error::Error;
 use crate::offtarget::{default_base_url, CheckRequest, CheckResponse, OfftargetClient};
-use axum::extract::State;
+use crate::resolve::{
+    resolve_symbol, retrieve_accession, NcbiClient, ResolveQuery, ResolveResponse, RetrieveQuery,
+    RetrieveResponse,
+};
+use crate::resolve_cache::ResolveCache;
+use axum::extract::{Query, State};
 use axum::http::{header, HeaderValue, Method, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
@@ -34,11 +39,18 @@ pub const DEFAULT_CORS_ORIGINS: &[&str] = &["http://localhost:3000", "http://127
 pub struct AppState {
     pub ensembl: EnsemblClient,
     pub offtarget: OfftargetClient,
+    pub cache: ResolveCache,
+    pub ncbi: NcbiClient,
 }
 
 impl AppState {
     pub fn from_env() -> Result<Self, Error> {
-        Self::with_origins(ensembl_base_url(), default_base_url())
+        Ok(Self {
+            ensembl: EnsemblClient::with_base(ensembl_base_url())?,
+            offtarget: OfftargetClient::with_base(default_base_url())?,
+            cache: ResolveCache::from_env()?,
+            ncbi: NcbiClient::new()?,
+        })
     }
 
     pub fn with_origins(
@@ -48,6 +60,8 @@ impl AppState {
         Ok(Self {
             ensembl: EnsemblClient::with_base(ensembl_base)?,
             offtarget: OfftargetClient::with_base(offtarget_base)?,
+            cache: ResolveCache::in_memory()?,
+            ncbi: NcbiClient::with_base("http://127.0.0.1:1/efetch")?,
         })
     }
 }
@@ -93,6 +107,8 @@ pub fn router(state: AppState) -> Router {
         .route("/health", get(health))
         .route("/v1/version", get(version))
         .route("/v1/design", post(design))
+        .route("/v1/resolve", get(resolve))
+        .route("/v1/retrieve", get(retrieve))
         .route("/v1/offtarget/check", post(offtarget_check))
         .with_state(state)
         .layer(cors_layer())
@@ -187,6 +203,31 @@ async fn design(
     Ok(Json(run_design(&state, req).await?))
 }
 
+async fn resolve(
+    State(state): State<AppState>,
+    Query(q): Query<ResolveQuery>,
+) -> Result<Json<ResolveResponse>, ApiError> {
+    Ok(Json(
+        resolve_symbol(
+            &state.ensembl,
+            &state.cache,
+            &q.symbol,
+            &q.species,
+            q.include_sequence,
+        )
+        .await?,
+    ))
+}
+
+async fn retrieve(
+    State(state): State<AppState>,
+    Query(q): Query<RetrieveQuery>,
+) -> Result<Json<RetrieveResponse>, ApiError> {
+    Ok(Json(
+        retrieve_accession(&state.ensembl, &state.ncbi, &state.cache, &q.accession).await?,
+    ))
+}
+
 async fn offtarget_check(
     State(state): State<AppState>,
     Json(req): Json<CheckRequest>,
@@ -217,10 +258,9 @@ async fn design_from_symbol(
     symbol: &str,
 ) -> Result<DesignResult, Error> {
     let species = ensembl_species(&req.species, &req.input.specificity);
-    let resolved = state
-        .ensembl
-        .resolve_by_symbol_for(symbol, &species)
-        .await?;
+    let resolved = resolve_symbol(&state.ensembl, &state.cache, symbol, &species, true)
+        .await?
+        .to_resolved_target()?;
     let mut input = req.input;
     if input.gene_symbol.trim().is_empty() {
         input.gene_symbol = resolved.symbol.clone();

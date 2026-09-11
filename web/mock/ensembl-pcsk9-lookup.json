@@ -1,0 +1,24 @@
+{
+  "id": "ENSG00000169174",
+  "display_name": "PCSK9",
+  "description": "proprotein convertase subtilisin/kexin type 9 [Source:HGNC Symbol;Acc:HGNC:20001]",
+  "seq_region_name": "1",
+  "start": 55039447,
+  "end": 55064852,
+  "strand": 1,
+  "assembly_name": "GRCh38",
+  "canonical_transcript": "ENST00000302118.5",
+  "Transcript": [
+    {
+      "id": "ENST00000302118",
+      "version": 5,
+      "is_canonical": 1,
+      "biotype": "protein_coding",
+      "length": 3637,
+      "Translation": {
+        "id": "ENSP00000269197",
+        "length": 692
+      }
+    }
+  ]
+}

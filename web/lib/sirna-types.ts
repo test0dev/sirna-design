@@ -57,11 +57,34 @@ export interface SirnaCandidate {
   offTarget?: OffTargetHits;
 }
 
+/** Matches Rust `DesignResult` (camelCase serde). */
 export interface SirnaResult {
   transcript: Transcript;
   cds: CoordinateRange;
   design: DesignSettings;
   sirnas: SirnaCandidate[];
+}
+
+/** Rust `POST /v1/design` returns `DesignResult` directly (not `{ result }`). */
+export function asSirnaResult(value: unknown): SirnaResult {
+  if (!value || typeof value !== "object") {
+    throw new Error("Design response is not a JSON object.");
+  }
+  const rec = value as Record<string, unknown>;
+  if (
+    !rec.transcript ||
+    typeof rec.transcript !== "object" ||
+    !rec.cds ||
+    typeof rec.cds !== "object" ||
+    !rec.design ||
+    typeof rec.design !== "object" ||
+    !Array.isArray(rec.sirnas)
+  ) {
+    throw new Error(
+      "Design response is missing transcript, cds, design, or sirnas.",
+    );
+  }
+  return value as SirnaResult;
 }
 
 export type TmBand = "under-10" | "under-15" | "under-21.5" | "functional";

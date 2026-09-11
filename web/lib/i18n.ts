@@ -97,7 +97,7 @@ const zh = {
   excludePatternHelp: "丢弃目标序列包含该基序的候选。",
   matchAll: "只显示同时满足全部已选条件的 siRNA",
   matchAllHint: "组合过严导致没有结果时，可关闭此项。",
-  submitHint: "经本地代理提交到 siDirect，再将 HTML 解析为结果 JSON。",
+  submitHint: "提交到本机 Rust API（/v1/design），结果直接渲染。",
   designSirna: "设计 siRNA",
 
   resultsTitle: "{symbol} siRNA 设计结果",
@@ -249,8 +249,7 @@ const en: Record<keyof typeof zh, string> = {
   excludePatternHelp: "Discard candidates whose target sequence contains this motif.",
   matchAll: "Only show siRNAs that match all checked criteria",
   matchAllHint: "Turn this off if a strict combination returns no candidates.",
-  submitHint:
-    "Submits through a local proxy to siDirect, then parses HTML into the result JSON.",
+  submitHint: "Submits to the local Rust API (/v1/design) and renders the result.",
   designSirna: "Design siRNA",
 
   resultsTitle: "{symbol} siRNA design results",

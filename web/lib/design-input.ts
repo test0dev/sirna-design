@@ -331,3 +331,30 @@ export function validateDesignInput(input: DesignInput): string | null {
 
   return null;
 }
+
+/** Body for Rust `POST /v1/design` (camelCase `DesignInput`, clean sequence). */
+export function toDesignPayload(input: DesignInput): Record<string, unknown> {
+  const parsed = parseNucleotideSequence(input.sequence);
+  const gcMin = input.gcMin.trim();
+  const gcMax = input.gcMax.trim();
+  return {
+    geneSymbol: input.geneSymbol.trim(),
+    accession: input.accession.trim(),
+    sequence: parsed.sequence,
+    algorithms: input.algorithms,
+    combine: input.combine,
+    seedTmMax: input.seedTmMax,
+    specificity: input.specificity,
+    hideLessSpecific: input.hideLessSpecific,
+    showOffTargetHits: input.showOffTargetHits,
+    targetRangeFrom: input.targetRangeFrom.trim(),
+    targetRangeTo: input.targetRangeTo.trim(),
+    avoidContiguousGC: input.avoidContiguousGC,
+    avoidContiguousGCMin: input.avoidContiguousGCMin,
+    avoidContiguousAT: input.avoidContiguousAT,
+    avoidContiguousATMin: input.avoidContiguousATMin,
+    gcMin: gcMin === "" ? 30 : Number(gcMin),
+    gcMax: gcMax === "" ? 52 : Number(gcMax),
+    matchAllCriteria: input.matchAllCriteria,
+  };
+}

@@ -1,0 +1,11 @@
+[
+  {
+    "dbname": "RefSeq_mRNA",
+    "display_id": "NM_001407241.1",
+    "info_text": "Generated via otherfeatures"
+  },
+  {
+    "dbname": "RefSeq_peptide",
+    "display_id": "NP_777596.2"
+  }
+]

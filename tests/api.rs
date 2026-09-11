@@ -79,6 +79,49 @@ async fn health_ok() {
 }
 
 #[tokio::test]
+async fn cors_allows_local_next_origin() {
+    let app = router(dummy_state());
+    let req = axum::http::Request::builder()
+        .uri("/health")
+        .header(axum::http::header::ORIGIN, "http://localhost:3000")
+        .body(axum::body::Body::empty())
+        .expect("cors get");
+    let res = send(app, req).await;
+    assert_eq!(res.status(), axum::http::StatusCode::OK);
+    let allow = res
+        .headers()
+        .get(axum::http::header::ACCESS_CONTROL_ALLOW_ORIGIN)
+        .and_then(|v| v.to_str().ok());
+    assert_eq!(allow, Some("http://localhost:3000"));
+}
+
+#[tokio::test]
+async fn cors_preflight_design() {
+    let app = router(dummy_state());
+    let req = axum::http::Request::builder()
+        .method("OPTIONS")
+        .uri("/v1/design")
+        .header(axum::http::header::ORIGIN, "http://127.0.0.1:3000")
+        .header(
+            axum::http::header::ACCESS_CONTROL_REQUEST_METHOD,
+            "POST",
+        )
+        .header(
+            axum::http::header::ACCESS_CONTROL_REQUEST_HEADERS,
+            "content-type",
+        )
+        .body(axum::body::Body::empty())
+        .expect("preflight");
+    let res = send(app, req).await;
+    assert_eq!(res.status(), axum::http::StatusCode::OK);
+    let allow = res
+        .headers()
+        .get(axum::http::header::ACCESS_CONTROL_ALLOW_ORIGIN)
+        .and_then(|v| v.to_str().ok());
+    assert_eq!(allow, Some("http://127.0.0.1:3000"));
+}
+
+#[tokio::test]
 async fn version_matches_crate() {
     let app = router(dummy_state());
     let res = send(app, get("/v1/version")).await;

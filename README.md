@@ -30,6 +30,7 @@ Environment:
 | `LISTEN_ADDR` | `0.0.0.0:8080` | Bind address (`--listen` overrides) |
 | `OFFTARGET_URL` | `https://offtarget.0bot.dev` | Remote offtarget origin |
 | `ENSEMBL_URL` | `https://rest.ensembl.org` | Ensembl REST origin |
+| `CORS_ALLOW_ORIGIN` | `http://localhost:3000`, `http://127.0.0.1:3000` | Browser origins (`*` or comma-separated list) |
 
 ## HTTP API
 

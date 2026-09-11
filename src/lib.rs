@@ -7,6 +7,8 @@ pub mod design;
 pub mod ensembl;
 pub mod error;
 pub mod offtarget;
+pub mod resolve;
+pub mod resolve_cache;
 pub mod rules;
 pub mod tm;
 
@@ -22,8 +24,8 @@ pub use design::{
     COMBINE_U_OR_RA,
 };
 pub use ensembl::{
-    clean_description, locate_cds, resolve_by_symbol, resolve_by_symbol_for, EnsemblClient,
-    ResolvedTarget, DEFAULT_SPECIES, ENSEMBL_REST,
+    clean_description, locate_cds, parse_xrefs, resolve_by_symbol, resolve_by_symbol_for,
+    EnsemblClient, ResolvedTarget, DEFAULT_SPECIES, ENSEMBL_REST,
 };
 pub use error::Error;
 pub use offtarget::{
@@ -31,6 +33,13 @@ pub use offtarget::{
     CheckRequest, CheckResponse, DbInfo, HealthStatus, OfftargetClient, OfftargetHit,
     OfftargetQuery, OfftargetResult, DEFAULT_OFFTARGET_URL, OFFTARGET_URL_ENV, QUERY_BATCH_SIZE,
     SPECIFICITY_HIGH, SPECIFICITY_LOW, SPECIFICITY_MEDIUM,
+};
+pub use resolve::{
+    parse_retrieve_fasta, resolve_symbol, retrieve_accession, NcbiClient, ResolveQuery,
+    ResolveResponse, RetrieveQuery, RetrieveResponse, NCBI_EFETCH,
+};
+pub use resolve_cache::{
+    accession_key, symbol_key, ResolveCache, DEFAULT_REDB_PATH, REDB_PATH_ENV,
 };
 pub use rules::{
     combine_all_and, combine_u_or_ra, combine_union, derive_score, evaluate_rules, gc_percent,

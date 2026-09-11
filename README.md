@@ -35,7 +35,7 @@ npm install
 npm run dev
 ```
 
-Open `http://localhost:3000`. The browser posts `DesignInput` JSON to `POST /v1/design` (see `NEXT_PUBLIC_API_BASE`, default `http://127.0.0.1:8080`). Gene-symbol resolve and accession retrieve stay as Next BFF routes (`/api/resolve-target`, `/api/retrieve`) and talk to Ensembl / NCBI only.
+Open `http://localhost:3000`. The browser talks to the Rust API (`NEXT_PUBLIC_API_BASE`, default `http://127.0.0.1:8080`): `POST /v1/design`, `GET /v1/resolve`, `GET /v1/retrieve`.
 
 See `web/README.md`.
 
@@ -44,8 +44,9 @@ Environment:
 | Variable | Default | Purpose |
 |---|---|---|
 | `LISTEN_ADDR` | `0.0.0.0:8080` | Bind address (`--listen` overrides) |
-| `OFFTARGET_URL` | `https://offtarget.0bot.dev` | Remote offtarget origin |
+| `OFFTARGET_URL` | `https://offtarget.0bot.dev` | Remote offtarget origin. Internal offtarget is still `127.0.0.1:9100`. |
 | `ENSEMBL_URL` | `https://rest.ensembl.org` | Ensembl REST origin |
+| `REDB_PATH` | `data/resolve-cache.redb` | redb cache for `/v1/resolve` and `/v1/retrieve` |
 | `CORS_ALLOW_ORIGIN` | `http://localhost:3000`, `http://127.0.0.1:3000` | Browser origins (`*` or comma-separated list) |
 
 ## HTTP API
@@ -54,6 +55,8 @@ Environment:
 |---|---|---|---|
 | `GET` | `/health` | — | `{ "status": "ok" }` |
 | `GET` | `/v1/version` | — | `{ "name", "version" }` (crate) |
+| `GET` | `/v1/resolve` | `symbol` (required), `species` (default `homo_sapiens`), `include_sequence` (default true) | camelCase `{ symbol, name, accession, ensemblTranscript, species, cds, sequence, length, cached }` |
+| `GET` | `/v1/retrieve` | `accession` (`NM_` / `XM_` / `ENST…`) | `{ accession, header, sequence, length, cached }` — ENST via Ensembl cDNA, else NCBI efetch FASTA |
 | `POST` | `/v1/design` | see below | `DesignResult` (same serde shape as `pcsk9.design.*.json`) |
 | `POST` | `/v1/offtarget/check` | remote offtarget request | `{ "results": [...] }` |
 

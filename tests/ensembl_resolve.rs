@@ -46,6 +46,12 @@ fn mock_routes(path: &str, query: Option<&str>) -> Option<(u16, Value)> {
         ("/xrefs/id/ENST00000302118", _) => Some((
             200,
             json!([
+                null,
+                {
+                    "dbname": null,
+                    "display_id": null,
+                    "synonyms": [null, "x"]
+                },
                 {
                     "dbname": "RefSeq_mRNA",
                     "display_id": "NM_001407241.1",
@@ -54,7 +60,9 @@ fn mock_routes(path: &str, query: Option<&str>) -> Option<(u16, Value)> {
                 {
                     "dbname": "RefSeq_mRNA",
                     "display_id": "NM_174936.4",
-                    "info_text": "MANE Select"
+                    "primary_id": null,
+                    "info_text": "MANE Select",
+                    "mystery": { "ok": true }
                 }
             ]),
         )),

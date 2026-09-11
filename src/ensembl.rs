@@ -121,6 +121,29 @@ impl EnsemblGet for EnsemblClient {
 }
 
 impl EnsemblClient {
+    /// `GET /sequence/id/{id}?type=cdna` → `(header, sequence)`.
+    pub async fn fetch_cdna(&self, id: &str) -> Result<(String, String), Error> {
+        let id = id.trim();
+        if id.is_empty() {
+            return Err(Error::Msg("accession is required".into()));
+        }
+        let json = self.get_json(&sequence_path(id, "cdna")).await?;
+        let seq = parse_seq(&json)?;
+        if seq.is_empty() {
+            return Err(Error::Msg(format!(
+                "Ensembl cDNA sequence is empty for {id}"
+            )));
+        }
+        let header = json
+            .get("desc")
+            .and_then(|s| s.as_str())
+            .filter(|s| !s.is_empty())
+            .or_else(|| json.get("id").and_then(|s| s.as_str()))
+            .unwrap_or(id)
+            .to_string();
+        Ok((header, seq))
+    }
+
     async fn get_json_once(&self, path: &str) -> Result<Value, Error> {
         let url = format!("{}{}", self.base.trim_end_matches('/'), path);
         tracing::debug!(%url, "ensembl GET");
@@ -206,8 +229,18 @@ pub(crate) async fn resolve_with<C: EnsemblGet>(
     let tx = pick_canonical(&gene)?;
     let tx_id = tx.id.clone();
 
-    let xrefs: Vec<Xref> = deserialize(client.get_json(&xrefs_path(&tx_id)).await?, "xrefs")?;
-    let accession = pick_refseq(&xrefs).unwrap_or_else(|| tx_id.clone());
+    let accession = match fetch_refseq_accession(client, &tx_id).await {
+        Ok(Some(acc)) => acc,
+        Ok(None) => tx_id.clone(),
+        Err(e) => {
+            tracing::warn!(
+                tx_id,
+                error = %e,
+                "xrefs failed; falling back to Ensembl transcript id"
+            );
+            tx_id.clone()
+        }
+    };
 
     let cdna_json = client.get_json(&sequence_path(&tx_id, "cdna")).await?;
     let cds_json = client.get_json(&sequence_path(&tx_id, "cds")).await?;
@@ -302,6 +335,33 @@ pub fn pick_canonical(gene: &LookupGene) -> Result<&LookupTranscript, Error> {
         .expect("non-empty transcript pool"))
 }
 
+async fn fetch_refseq_accession<C: EnsemblGet>(
+    client: &C,
+    tx_id: &str,
+) -> Result<Option<String>, Error> {
+    let value = client.get_json(&xrefs_path(tx_id)).await?;
+    Ok(pick_refseq(&parse_xrefs(value)))
+}
+
+/// Best-effort parse of `/xrefs/id` JSON (array, wrapped object, or junk).
+pub fn parse_xrefs(value: Value) -> Vec<Xref> {
+    let items = match value {
+        Value::Array(a) => a,
+        Value::Object(map) => map
+            .get("xrefs")
+            .or_else(|| map.get("Xrefs"))
+            .cloned()
+            .and_then(|v| v.as_array().cloned())
+            .unwrap_or_default(),
+        _ => return Vec::new(),
+    };
+    items
+        .into_iter()
+        .filter(|v| !v.is_null())
+        .filter_map(|v| serde_json::from_value::<Xref>(v).ok())
+        .collect()
+}
+
 /// First `RefSeq_mRNA` xref, preferring one whose text mentions MANE Select.
 pub fn pick_refseq(xrefs: &[Xref]) -> Option<String> {
     let mrna: Vec<&Xref> = xrefs.iter().filter(|x| x.dbname == "RefSeq_mRNA").collect();
@@ -367,19 +427,22 @@ pub struct LookupExon {
 }
 
 /// One `/xrefs/id/{tx}` row.
+///
+/// Ensembl occasionally emits nulls, extra fields, or mixed-type cells.
+/// Unknown fields are ignored; nulls become empty / `None`.
 #[derive(Debug, Clone, Default, Deserialize)]
 pub struct Xref {
-    #[serde(default)]
+    #[serde(default, deserialize_with = "de_flex_string")]
     pub dbname: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "de_flex_opt_string")]
     pub display_id: Option<String>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "de_flex_opt_string")]
     pub primary_id: Option<String>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "de_flex_opt_string")]
     pub info_text: Option<String>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "de_flex_opt_string")]
     pub info_type: Option<String>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "de_flex_opt_string")]
     pub description: Option<String>,
 }
 
@@ -483,6 +546,35 @@ fn parse_seq(v: &Value) -> Result<String, Error> {
 
 fn deserialize<T: for<'de> Deserialize<'de>>(value: Value, what: &str) -> Result<T, Error> {
     serde_json::from_value(value).map_err(|e| Error::Msg(format!("invalid Ensembl {what}: {e}")))
+}
+
+fn de_flex_string<'de, D>(deserializer: D) -> Result<String, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    Ok(string_from_value(Value::deserialize(deserializer)?))
+}
+
+fn de_flex_opt_string<'de, D>(deserializer: D) -> Result<Option<String>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let s = string_from_value(Value::deserialize(deserializer)?);
+    if s.is_empty() {
+        Ok(None)
+    } else {
+        Ok(Some(s))
+    }
+}
+
+fn string_from_value(v: Value) -> String {
+    match v {
+        Value::Null => String::new(),
+        Value::String(s) => s,
+        Value::Number(n) => n.to_string(),
+        Value::Bool(b) => b.to_string(),
+        _ => String::new(),
+    }
 }
 
 fn de_is_canonical<'de, D>(deserializer: D) -> Result<bool, D::Error>
@@ -785,6 +877,71 @@ mod tests {
         assert_eq!(tx.name, got.name);
         assert_eq!(tx.sequence, cdna);
         assert_eq!(tx.length, cdna.len() as u32);
+    }
+
+    #[test]
+    fn parse_xrefs_tolerates_nulls_extras_and_wrapped_object() {
+        let weird = json!([
+            null,
+            { "dbname": null, "display_id": null, "mystery": { "n": 1 } },
+            {
+                "dbname": "RefSeq_mRNA",
+                "display_id": "NM_174936.4",
+                "primary_id": null,
+                "info_text": "MANE Select",
+                "synonyms": [null, "x"]
+            }
+        ]);
+        let got = parse_xrefs(weird);
+        assert_eq!(pick_refseq(&got).as_deref(), Some("NM_174936.4"));
+
+        let wrapped = json!({
+            "xrefs": [{ "dbname": "RefSeq_mRNA", "display_id": "NM_1.1" }]
+        });
+        assert_eq!(
+            pick_refseq(&parse_xrefs(wrapped)).as_deref(),
+            Some("NM_1.1")
+        );
+        assert!(parse_xrefs(json!({"error": "nope"})).is_empty());
+    }
+
+    #[tokio::test]
+    async fn resolve_weird_xrefs_payload_still_returns_cdna() {
+        let cdna = "AAAATGCCCTAA";
+        let cds = "ATGCCC";
+        let mut api = mock_pcsk9(cdna, cds, true);
+        api.0.insert(
+            "/xrefs/id/ENST00000302118".into(),
+            json!([
+                null,
+                { "dbname": null, "extra": true },
+                {
+                    "dbname": "RefSeq_mRNA",
+                    "display_id": "NM_174936.4",
+                    "info_text": null,
+                    "synonyms": [null]
+                }
+            ]),
+        );
+        let got = resolve_with(&api, "PCSK9", DEFAULT_SPECIES)
+            .await
+            .expect("resolve");
+        assert_eq!(got.accession, "NM_174936.4");
+        assert_eq!(got.ensembl_transcript, "ENST00000302118");
+        assert_eq!(got.cdna, cdna);
+        assert_eq!(got.cds, Cds { start: 4, end: 9 });
+    }
+
+    #[tokio::test]
+    async fn resolve_xrefs_http_error_falls_back_to_enst() {
+        let cdna = "AAAATGCCCTAA";
+        let mut api = mock_pcsk9(cdna, "ATGCCC", true);
+        api.0.remove("/xrefs/id/ENST00000302118");
+        let got = resolve_with(&api, "PCSK9", DEFAULT_SPECIES)
+            .await
+            .expect("resolve despite missing xrefs");
+        assert_eq!(got.accession, "ENST00000302118");
+        assert_eq!(got.cdna, cdna);
     }
 
     #[tokio::test]

@@ -23,7 +23,7 @@ Open [http://localhost:3000](http://localhost:3000).
 
 Design submit is `POST ${NEXT_PUBLIC_API_BASE}/v1/design` with camelCase `DesignInput`. The response is a Rust `DesignResult` (same shape as `SirnaResult`); it is **not** wrapped as `{ result: ... }`.
 
-Resolve-by-symbol (`/api/resolve-target`) and accession retrieve (`/api/retrieve`) remain Next BFF routes. They use Ensembl REST and NCBI E-utilities only — they do not call siDirect, and they do not run a full design.
+Resolve and retrieve go to the Rust API: `GET /v1/resolve?symbol=…&include_sequence=1` and `GET /v1/retrieve?accession=…` (see `apiUrl`). They do not call siDirect, and they do not run a full design.
 
 ```bash
 npm run typecheck

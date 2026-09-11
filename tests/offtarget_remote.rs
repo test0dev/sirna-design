@@ -60,7 +60,7 @@ fn golden_request_and_results_round_trip() {
 
 #[test]
 fn guide_to_dna_and_specificity_filter_exported() {
-    assert_eq!(guide_to_dna(" ucaUUga\tt "), "TCATTGATG");
+    assert_eq!(guide_to_dna(" ucaUUga\tt "), "TCATTGAT");
     assert!(passes_specificity_filter(SPECIFICITY_HIGH, true));
     assert!(passes_specificity_filter(SPECIFICITY_MEDIUM, true));
     assert!(!passes_specificity_filter(SPECIFICITY_LOW, true));

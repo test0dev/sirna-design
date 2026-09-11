@@ -380,7 +380,7 @@ mod tests {
 
     #[test]
     fn guide_to_dna_upper_u_to_t_strips_ws() {
-        assert_eq!(guide_to_dna("ucau uga\nUGA"), "TCATTGATGAT");
+        assert_eq!(guide_to_dna("ucau uga\nUGA"), "TCATTGATGA");
         assert_eq!(guide_to_dna("  tcattgat  "), "TCATTGAT");
         assert_eq!(
             guide_to_dna("TCATTGATGACATCTTTGGCA"),

@@ -10,4 +10,7 @@ pub enum Error {
 
     #[error("Ensembl HTTP {status}: {message}")]
     EnsemblHttp { status: u16, message: String },
+
+    #[error("Offtarget HTTP {status}: {message}")]
+    OfftargetHttp { status: u16, message: String },
 }

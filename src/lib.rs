@@ -5,6 +5,7 @@
 pub mod design;
 pub mod ensembl;
 pub mod error;
+pub mod offtarget;
 pub mod rules;
 pub mod tm;
 
@@ -19,6 +20,12 @@ pub use ensembl::{
     ResolvedTarget, DEFAULT_SPECIES, ENSEMBL_REST,
 };
 pub use error::Error;
+pub use offtarget::{
+    check, db_info, default_base_url, guide_to_dna, health, passes_specificity_filter,
+    CheckRequest, CheckResponse, DbInfo, HealthStatus, OfftargetClient, OfftargetHit,
+    OfftargetQuery, OfftargetResult, DEFAULT_OFFTARGET_URL, OFFTARGET_URL_ENV, QUERY_BATCH_SIZE,
+    SPECIFICITY_HIGH, SPECIFICITY_LOW, SPECIFICITY_MEDIUM,
+};
 pub use rules::{
     combine_all_and, combine_u_or_ra, combine_union, derive_score, evaluate_rules, gc_percent,
     oligos_from_23mer, pass_amarzguioui, pass_reynolds, pass_ui_tei, passes_contiguous_filters,

@@ -3,6 +3,7 @@
 //! Modules land incrementally: `rules` → `tm` → `design` → `ensembl` → `offtarget` → `api`.
 
 pub mod design;
+pub mod ensembl;
 pub mod error;
 pub mod rules;
 pub mod tm;
@@ -12,6 +13,10 @@ pub use design::{
     skip_offtarget, AlgorithmFlags, Cds, DesignInput, DesignMeta, DesignResult, RuleHits,
     SirnaCandidate, SpecificityInfo, TargetRange, Transcript, COMBINE_ALL_AND, COMBINE_UNION,
     COMBINE_U_OR_RA,
+};
+pub use ensembl::{
+    clean_description, locate_cds, resolve_by_symbol, resolve_by_symbol_for, EnsemblClient,
+    ResolvedTarget, DEFAULT_SPECIES, ENSEMBL_REST,
 };
 pub use error::Error;
 pub use rules::{

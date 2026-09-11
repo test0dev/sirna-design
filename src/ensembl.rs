@@ -1,8 +1,8 @@
 //! Ensembl REST client: gene symbol → canonical transcript + RefSeq + sequences.
 //!
-//! Faithful port of the Node/Bun `resolveBySymbol` helper:
-//! lookup symbol → expand gene → pick canonical transcript → RefSeq_mRNA xrefs
-//! (MANE Select preferred) → fetch cDNA + CDS → locate CDS on cDNA (1-based closed).
+//! Fast path: `/lookup/symbol` (no expand) already returns `canonical_transcript`.
+//! Then RefSeq xrefs + cDNA + CDS run in parallel. Expand `/lookup/id?expand=1`
+//! is only a fallback when the symbol lookup omits `canonical_transcript`.
 
 use crate::design::{Cds, Transcript};
 use crate::error::Error;
@@ -62,7 +62,7 @@ impl EnsemblClient {
     pub fn with_base(base: impl Into<String>) -> Result<Self, Error> {
         let http = reqwest::Client::builder()
             .user_agent(concat!("sirna-design/", env!("CARGO_PKG_VERSION")))
-            .timeout(Duration::from_secs(45))
+            .timeout(ENSEMBL_HTTP_TIMEOUT)
             .build()
             .map_err(|e| Error::Http(e.to_string()))?;
         Ok(Self {
@@ -84,7 +84,7 @@ impl EnsemblClient {
     }
 }
 
-/// `GET /lookup/symbol/{species}/{SYM}` then the expand / xref / sequence chain.
+/// `GET /lookup/symbol/{species}/{SYM}` (no expand) then parallel xref / sequences.
 pub async fn resolve_by_symbol(symbol: &str) -> Result<ResolvedTarget, Error> {
     EnsemblClient::new()?.resolve_by_symbol(symbol).await
 }
@@ -96,15 +96,25 @@ pub async fn resolve_by_symbol_for(symbol: &str, species: &str) -> Result<Resolv
         .await
 }
 
+/// Bound hanging `/xrefs/id` calls; prefer ENST fallback over multi-timeout waits.
+const XREFS_TIMEOUT: Duration = Duration::from_secs(5);
+/// Total per-request timeout (Ensembl HTML 500s otherwise burn 45s).
+const ENSEMBL_HTTP_TIMEOUT: Duration = Duration::from_secs(15);
+/// One retry on transient failures — do not loop on HTML 500 decode errors.
+const ENSEMBL_HTTP_ATTEMPTS: u32 = 2;
+
 pub(crate) trait EnsemblGet: Sync {
     fn get_json(&self, path: &str) -> impl Future<Output = Result<Value, Error>> + Send;
+
+    fn xrefs_timeout(&self) -> Duration {
+        XREFS_TIMEOUT
+    }
 }
 
 impl EnsemblGet for EnsemblClient {
     async fn get_json(&self, path: &str) -> Result<Value, Error> {
-        const ATTEMPTS: u32 = 4;
         let mut last = None;
-        for attempt in 0..ATTEMPTS {
+        for attempt in 0..ENSEMBL_HTTP_ATTEMPTS {
             if attempt > 0 {
                 let backoff = Duration::from_millis(300 * (1 << (attempt - 1)));
                 tracing::debug!(path, attempt, ?backoff, "ensembl retry");
@@ -112,7 +122,7 @@ impl EnsemblGet for EnsemblClient {
             }
             match self.get_json_once(path).await {
                 Ok(v) => return Ok(v),
-                Err(e) if retryable(&e) && attempt + 1 < ATTEMPTS => last = Some(e),
+                Err(e) if retryable(&e) && attempt + 1 < ENSEMBL_HTTP_ATTEMPTS => last = Some(e),
                 Err(e) => return Err(e),
             }
         }
@@ -182,15 +192,25 @@ impl EnsemblClient {
 fn retryable(err: &Error) -> bool {
     match err {
         Error::Http(msg) => {
+            if looks_like_html(msg) {
+                return false;
+            }
             let m = msg.to_ascii_lowercase();
             m.contains("timed out")
                 || m.contains("timeout")
                 || m.contains("connection")
                 || m.contains("decode")
         }
-        Error::EnsemblHttp { status, .. } => matches!(*status, 429 | 500 | 502 | 503 | 504),
+        Error::EnsemblHttp { status, message } => {
+            matches!(*status, 429 | 500 | 502 | 503 | 504) && !looks_like_html(message)
+        }
         _ => false,
     }
+}
+
+fn looks_like_html(s: &str) -> bool {
+    let t = s.trim_start();
+    t.starts_with('<') || t.to_ascii_lowercase().contains("<html")
 }
 
 pub(crate) async fn resolve_with<C: EnsemblGet>(
@@ -221,31 +241,34 @@ pub(crate) async fn resolve_with<C: EnsemblGet>(
         )));
     }
 
-    let gene: LookupGene = deserialize(
-        client.get_json(&lookup_id_expand_path(&lookup.id)).await?,
-        "lookup/id",
-    )?;
-
-    let tx = pick_canonical(&gene)?;
-    let tx_id = tx.id.clone();
-
-    let accession = match fetch_refseq_accession(client, &tx_id).await {
-        Ok(Some(acc)) => acc,
-        Ok(None) => tx_id.clone(),
-        Err(e) => {
-            tracing::warn!(
-                tx_id,
-                error = %e,
-                "xrefs failed; falling back to Ensembl transcript id"
-            );
-            tx_id.clone()
+    let (gene, tx_id) = match canonical_transcript_id(lookup.canonical_transcript.as_deref()) {
+        Some(tx_id) => (lookup, tx_id),
+        None => {
+            let gene: LookupGene = deserialize(
+                client.get_json(&lookup_id_expand_path(&lookup.id)).await?,
+                "lookup/id",
+            )?;
+            let tx_id = pick_canonical(&gene)
+                .map_err(|e| {
+                    Error::Msg(format!(
+                        "no canonical_transcript for {sym} and expand fallback failed: {e}"
+                    ))
+                })?
+                .id
+                .clone();
+            (gene, tx_id)
         }
     };
 
-    let cdna_json = client.get_json(&sequence_path(&tx_id, "cdna")).await?;
-    let cds_json = client.get_json(&sequence_path(&tx_id, "cds")).await?;
-    let cdna = parse_seq(&cdna_json)?;
-    let cds_seq = parse_seq(&cds_json)?;
+    let cdna_path = sequence_path(&tx_id, "cdna");
+    let cds_path = sequence_path(&tx_id, "cds");
+    let (accession, cdna_json, cds_json) = tokio::join!(
+        accession_or_enst(client, &tx_id),
+        client.get_json(&cdna_path),
+        client.get_json(&cds_path),
+    );
+    let cdna = parse_seq(&cdna_json?)?;
+    let cds_seq = parse_seq(&cds_json?)?;
     if cdna.is_empty() {
         return Err(Error::Msg(format!(
             "Ensembl cDNA sequence is empty for {tx_id}"
@@ -255,15 +278,10 @@ pub(crate) async fn resolve_with<C: EnsemblGet>(
     let symbol_out = gene
         .display_name
         .as_deref()
-        .or(lookup.display_name.as_deref())
         .filter(|s| !s.is_empty())
         .unwrap_or(sym.as_str())
         .to_string();
-    let raw_name = gene
-        .description
-        .as_deref()
-        .or(lookup.description.as_deref())
-        .unwrap_or("");
+    let raw_name = gene.description.as_deref().unwrap_or("");
 
     Ok(ResolvedTarget {
         symbol: symbol_out,
@@ -335,12 +353,52 @@ pub fn pick_canonical(gene: &LookupGene) -> Result<&LookupTranscript, Error> {
         .expect("non-empty transcript pool"))
 }
 
+async fn accession_or_enst<C: EnsemblGet>(client: &C, tx_id: &str) -> String {
+    match tokio::time::timeout(
+        client.xrefs_timeout(),
+        fetch_refseq_accession(client, tx_id),
+    )
+    .await
+    {
+        Ok(Ok(Some(acc))) => acc,
+        Ok(Ok(None)) => tx_id.to_string(),
+        Ok(Err(e)) => {
+            tracing::warn!(
+                tx_id,
+                error = %e,
+                "xrefs failed; falling back to Ensembl transcript id"
+            );
+            tx_id.to_string()
+        }
+        Err(_) => {
+            tracing::warn!(
+                tx_id,
+                "xrefs timed out; falling back to Ensembl transcript id"
+            );
+            tx_id.to_string()
+        }
+    }
+}
+
 async fn fetch_refseq_accession<C: EnsemblGet>(
     client: &C,
     tx_id: &str,
 ) -> Result<Option<String>, Error> {
     let value = client.get_json(&xrefs_path(tx_id)).await?;
     Ok(pick_refseq(&parse_xrefs(value)))
+}
+
+/// Stable Ensembl id: `ENST00000302118.5` → `ENST00000302118`.
+fn strip_ensembl_version(id: &str) -> &str {
+    match id.split_once('.') {
+        Some((stable, _)) if !stable.is_empty() => stable,
+        _ => id,
+    }
+}
+
+fn canonical_transcript_id(raw: Option<&str>) -> Option<String> {
+    let raw = raw.map(str::trim).filter(|s| !s.is_empty())?;
+    Some(strip_ensembl_version(raw).to_string())
 }
 
 /// Best-effort parse of `/xrefs/id` JSON (array, wrapped object, or junk).
@@ -650,7 +708,26 @@ mod tests {
             status: 400,
             message: "bad symbol".into()
         }));
+        assert!(!retryable(&Error::EnsemblHttp {
+            status: 500,
+            message: "<html><body>Internal Server Error</body></html>".into()
+        }));
         assert!(!retryable(&Error::Msg("no transcripts".into())));
+    }
+
+    #[test]
+    fn canonical_transcript_strips_version_suffix() {
+        assert_eq!(
+            strip_ensembl_version("ENST00000302118.5"),
+            "ENST00000302118"
+        );
+        assert_eq!(strip_ensembl_version("ENST00000302118"), "ENST00000302118");
+        assert_eq!(
+            canonical_transcript_id(Some(" ENST00000302118.5 ")).as_deref(),
+            Some("ENST00000302118")
+        );
+        assert_eq!(canonical_transcript_id(Some("")), None);
+        assert_eq!(canonical_transcript_id(None), None);
     }
 
     #[test]
@@ -817,7 +894,8 @@ mod tests {
                 json!({
                     "id": "ENSG00000169174",
                     "display_name": "PCSK9",
-                    "description": "proprotein convertase subtilisin/kexin type 9 [Source:HGNC Symbol;Acc:HGNC:20001]"
+                    "description": "proprotein convertase subtilisin/kexin type 9 [Source:HGNC Symbol;Acc:HGNC:20001]",
+                    "canonical_transcript": "ENST00000302118.5"
                 }),
             ),
             (
@@ -855,6 +933,76 @@ mod tests {
             ),
         ]);
         MapGet(routes)
+    }
+
+    #[tokio::test]
+    async fn resolve_uses_canonical_transcript_without_expand() {
+        let cdna = "AAAATGCCCTAA";
+        let cds = "ATGCCC";
+        let mut api = mock_pcsk9(cdna, cds, true);
+        api.0.remove("/lookup/id/ENSG00000169174?expand=1");
+        let got = resolve_with(&api, "PCSK9", DEFAULT_SPECIES)
+            .await
+            .expect("resolve from non-expand lookup");
+        assert_eq!(got.symbol, "PCSK9");
+        assert_eq!(got.ensembl_transcript, "ENST00000302118");
+        assert_eq!(got.accession, "NM_174936.4");
+        assert_eq!(got.cdna, cdna);
+        assert_eq!(got.cds, Cds { start: 4, end: 9 });
+    }
+
+    #[tokio::test]
+    async fn resolve_falls_back_to_expand_when_canonical_missing() {
+        let cdna = "AAAATGCCCTAA";
+        let cds = "ATGCCC";
+        let mut api = mock_pcsk9(cdna, cds, true);
+        api.0.insert(
+            "/lookup/symbol/homo_sapiens/PCSK9".into(),
+            json!({
+                "id": "ENSG00000169174",
+                "display_name": "PCSK9",
+                "description": "proprotein convertase subtilisin/kexin type 9 [Source:HGNC Symbol;Acc:HGNC:20001]"
+            }),
+        );
+        let got = resolve_with(&api, "PCSK9", DEFAULT_SPECIES)
+            .await
+            .expect("expand fallback");
+        assert_eq!(got.ensembl_transcript, "ENST00000302118");
+        assert_eq!(got.accession, "NM_174936.4");
+    }
+
+    struct TimedGet {
+        inner: MapGet,
+        xrefs_delay: Duration,
+        xrefs_timeout: Duration,
+    }
+
+    impl EnsemblGet for TimedGet {
+        async fn get_json(&self, path: &str) -> Result<Value, Error> {
+            if path.starts_with("/xrefs/") {
+                tokio::time::sleep(self.xrefs_delay).await;
+            }
+            self.inner.get_json(path).await
+        }
+
+        fn xrefs_timeout(&self) -> Duration {
+            self.xrefs_timeout
+        }
+    }
+
+    #[tokio::test]
+    async fn resolve_xrefs_timeout_falls_back_to_enst() {
+        let cdna = "AAAATGCCCTAA";
+        let api = TimedGet {
+            inner: mock_pcsk9(cdna, "ATGCCC", true),
+            xrefs_delay: Duration::from_millis(80),
+            xrefs_timeout: Duration::from_millis(5),
+        };
+        let got = resolve_with(&api, "PCSK9", DEFAULT_SPECIES)
+            .await
+            .expect("resolve despite xrefs timeout");
+        assert_eq!(got.accession, "ENST00000302118");
+        assert_eq!(got.cdna, cdna);
     }
 
     #[tokio::test]

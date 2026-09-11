@@ -11,8 +11,9 @@ pub mod rules;
 pub mod tm;
 
 pub use api::{
-    ensembl_base_url, listen_addr, router, ApiHealth, ApiVersion, AppState, DesignRequest,
-    DEFAULT_LISTEN_ADDR, ENSEMBL_URL_ENV, LISTEN_ADDR_ENV,
+    cors_layer, ensembl_base_url, listen_addr, router, ApiHealth, ApiVersion, AppState,
+    DesignRequest, CORS_ALLOW_ORIGIN_ENV, DEFAULT_CORS_ORIGINS, DEFAULT_LISTEN_ADDR,
+    ENSEMBL_URL_ENV, LISTEN_ADDR_ENV,
 };
 pub use design::{
     default_input, design_from_resolved, design_sirnas, normalize_dna, parse_range, passes_combine,

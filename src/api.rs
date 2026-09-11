@@ -10,19 +10,24 @@ use crate::ensembl::{EnsemblClient, DEFAULT_SPECIES, ENSEMBL_REST};
 use crate::error::Error;
 use crate::offtarget::{default_base_url, CheckRequest, CheckResponse, OfftargetClient};
 use axum::extract::State;
-use axum::http::StatusCode;
+use axum::http::{header, HeaderValue, Method, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
+use tower_http::cors::{AllowOrigin, CorsLayer};
 
 /// Env override for [`ENSEMBL_REST`].
 pub const ENSEMBL_URL_ENV: &str = "ENSEMBL_URL";
 /// Env override for the bind address (also `--listen`).
 pub const LISTEN_ADDR_ENV: &str = "LISTEN_ADDR";
+/// Optional CORS allow-origin list (`*`, or comma-separated origins).
+pub const CORS_ALLOW_ORIGIN_ENV: &str = "CORS_ALLOW_ORIGIN";
 /// Default bind address.
 pub const DEFAULT_LISTEN_ADDR: &str = "0.0.0.0:8080";
+/// Local Next.js origins allowed when [`CORS_ALLOW_ORIGIN_ENV`] is unset.
+pub const DEFAULT_CORS_ORIGINS: &[&str] = &["http://localhost:3000", "http://127.0.0.1:3000"];
 
 /// Shared upstream clients injected into the router.
 #[derive(Clone)]
@@ -90,6 +95,76 @@ pub fn router(state: AppState) -> Router {
         .route("/v1/design", post(design))
         .route("/v1/offtarget/check", post(offtarget_check))
         .with_state(state)
+        .layer(cors_layer())
+}
+
+/// CORS layer: `CORS_ALLOW_ORIGIN` or the local Next.js defaults.
+pub fn cors_layer() -> CorsLayer {
+    cors_layer_from(env_nonempty(CORS_ALLOW_ORIGIN_ENV).as_deref())
+}
+
+fn cors_layer_from(setting: Option<&str>) -> CorsLayer {
+    CorsLayer::new()
+        .allow_origin(allow_origin_from(setting))
+        .allow_methods([Method::GET, Method::POST, Method::OPTIONS])
+        .allow_headers([header::CONTENT_TYPE, header::ACCEPT, header::ORIGIN])
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum ParsedCorsOrigins {
+    Any,
+    List(Vec<String>),
+}
+
+fn parse_cors_origins(setting: Option<&str>) -> ParsedCorsOrigins {
+    match setting.map(str::trim).filter(|s| !s.is_empty()) {
+        Some("*") => ParsedCorsOrigins::Any,
+        Some(raw) => {
+            let values: Vec<String> = raw
+                .split(',')
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .map(ToOwned::to_owned)
+                .collect();
+            if values.is_empty() {
+                ParsedCorsOrigins::List(default_cors_origin_list())
+            } else {
+                ParsedCorsOrigins::List(values)
+            }
+        }
+        None => ParsedCorsOrigins::List(default_cors_origin_list()),
+    }
+}
+
+fn allow_origin_from(setting: Option<&str>) -> AllowOrigin {
+    match parse_cors_origins(setting) {
+        ParsedCorsOrigins::Any => AllowOrigin::any(),
+        ParsedCorsOrigins::List(origins) => {
+            let values: Vec<HeaderValue> = origins
+                .iter()
+                .filter_map(|s| HeaderValue::from_str(s).ok())
+                .collect();
+            if values.is_empty() {
+                AllowOrigin::list(default_cors_header_values())
+            } else {
+                AllowOrigin::list(values)
+            }
+        }
+    }
+}
+
+fn default_cors_origin_list() -> Vec<String> {
+    DEFAULT_CORS_ORIGINS
+        .iter()
+        .map(|s| (*s).to_string())
+        .collect()
+}
+
+fn default_cors_header_values() -> Vec<HeaderValue> {
+    DEFAULT_CORS_ORIGINS
+        .iter()
+        .map(|o| HeaderValue::from_static(o))
+        .collect()
 }
 
 async fn health() -> Json<ApiHealth> {
@@ -291,5 +366,30 @@ mod tests {
         assert_eq!(ensembl_species("", "human-230"), DEFAULT_SPECIES);
         assert_eq!(ensembl_species("", "mouse-230"), "mus_musculus");
         assert_eq!(ensembl_species("custom", "mouse-230"), "custom");
+    }
+
+    #[test]
+    fn allow_origin_defaults_to_local_next() {
+        assert_eq!(
+            parse_cors_origins(None),
+            ParsedCorsOrigins::List(default_cors_origin_list())
+        );
+    }
+
+    #[test]
+    fn allow_origin_star_is_any() {
+        assert_eq!(parse_cors_origins(Some("*")), ParsedCorsOrigins::Any);
+        assert_eq!(parse_cors_origins(Some(" * ")), ParsedCorsOrigins::Any);
+    }
+
+    #[test]
+    fn allow_origin_parses_comma_list() {
+        assert_eq!(
+            parse_cors_origins(Some("https://ui.example, http://127.0.0.1:3001")),
+            ParsedCorsOrigins::List(vec![
+                "https://ui.example".into(),
+                "http://127.0.0.1:3001".into()
+            ])
+        );
     }
 }
